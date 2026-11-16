@@ -34,7 +34,7 @@ public:
  Engine&engine;HostFont font;EditHistory history;
  juce::Slider trims[Engine::maxSources],master;juce::ToggleButton mute[Engine::maxSources],outputMute;
  juce::TextButton chooseApp[Engine::maxSources],removeInput[Engine::maxSources],addInput{"Add input"};juce::Viewport inputViewport;juce::Component inputRack;
- juce::TextButton start{"Start"},stop{"Stop"},save{"Save"},addVst{"Add plugin"},meterSwitch;juce::ComboBox outputDevice;
+ juce::TextButton start{"Start"},stop{"Stop"},save{"Save"},addVst{"Add plugin"},meterSwitch;juce::ComboBox outputDevice;juce::StringArray outputDeviceNames;
  juce::Label sourceNames[Engine::maxSources],status,instances[Engine::maxSources],chainSummary;
  PeakMeter inputMeters[Engine::maxSources],outputMeter;juce::Viewport viewport;juce::Component rack;juce::Label empty;
  struct NameLabel final:juce::Label,juce::DragAndDropTarget{
@@ -65,14 +65,14 @@ public:
    mute[i].onClick=[this,i]{bool old=engine.sourceMute[i];history.push([this,i,old]{engine.sourceMute[i]=old;mute[i].setToggleState(old,juce::dontSendNotification);});engine.sourceMute[i]=mute[i].getToggleState();};
   }
   for(auto*c:std::initializer_list<juce::Component*>{&master,&outputMute,&start,&stop,&save,&status,&outputDevice,&addVst,&meterSwitch,&outputMeter,&viewport,&chainSummary,&inputViewport,&addInput})addAndMakeVisible(c);
-  outputDevice.setTooltip("Audio output device. Windows default is used unless you choose another device.");refreshOutputChoices();outputDevice.onChange=[this]{auto id=outputDevice.getSelectedId();auto selected=id<=1?juce::String():outputDevice.getItemText(id);if(!engine.selectOutputDevice(selected)){juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,"Audio output",engine.error);refreshOutputChoices();return;}if(onSave)onSave();};
+  outputDevice.setTooltip("Audio output device. Windows default is used unless you choose another device.");refreshOutputChoices();outputDevice.onChange=[this]{auto id=outputDevice.getSelectedId();auto selected=id<=1||id-2>=outputDeviceNames.size()?juce::String():outputDeviceNames[id-2];if(!engine.selectOutputDevice(selected)){juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,"Audio output",engine.error);refreshOutputChoices();return;}if(onSave)onSave();};
   inputViewport.setViewedComponent(&inputRack,false);inputViewport.setScrollBarsShown(true,false);addInput.onClick=[this]{int i=engine.addSource();if(i<0){juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,"Add input",engine.error);return;}history.clear();sourceNames[i].setText(engine.sourceNames[i],juce::dontSendNotification);trims[i].setValue(0,juce::dontSendNotification);mute[i].setToggleState(false,juce::dontSendNotification);resized();inputViewport.setViewPosition(0,100000);chooseSource(i);};
   outputMeter.setOutput();outputMeter.setTooltip("Post-output-trim sample peaks before the safety clamp. One-second hold, then decay.");
   viewport.getVerticalScrollBar().setColour(juce::ScrollBar::thumbColourId,juce::Colour(0xff48515c));inputViewport.getVerticalScrollBar().setColour(juce::ScrollBar::thumbColourId,juce::Colour(0xff48515c));viewport.setViewedComponent(&rack,false);viewport.setScrollBarsShown(true,false);rack.addAndMakeVisible(empty);empty.setText("Dry mix: add an effect to build your chain.",juce::dontSendNotification);
   master.setRange(Engine::silenceDb,0,0.1);master.setSliderStyle(juce::Slider::LinearHorizontal);master.setTextBoxStyle(juce::Slider::TextBoxRight,false,72,18);master.setTextValueSuffix(" dB");master.setValue(engine.masterDb.load(),juce::dontSendNotification);master.setTitle("Output level");bindSlider(master,engine.masterDb);
   outputMute.setButtonText("Output mute");outputMute.setToggleState(engine.outputMuted,juce::dontSendNotification);
   outputMute.onClick=[this]{bool old=engine.outputMuted;history.push([this,old]{engine.outputMuted=old;outputMute.setToggleState(old,juce::dontSendNotification);});engine.outputMuted=outputMute.getToggleState();};
-  start.onClick=[this]{history.push([this]{engine.stop();});engine.start(false);};stop.onClick=[this]{bool wasRunning=engine.running,wasMuted=engine.outputMuted;history.push([this,wasRunning,wasMuted]{if(wasRunning)engine.start(!wasMuted);});engine.stop();};
+  start.onClick=[this]{history.push([this]{engine.stop();});engine.start(true);};stop.onClick=[this]{bool wasRunning=engine.running,wasMuted=engine.outputMuted;history.push([this,wasRunning,wasMuted]{if(wasRunning)engine.start(!wasMuted);});engine.stop();};
   save.onClick=[this]{commitEditors();if(onSave)onSave();};save.addShortcut(juce::KeyPress('s',juce::ModifierKeys::ctrlModifier,0));
   addVst.onClick=[this]{chooseVst();};meterSwitch.onClick=[this]{changeMeterMode((engine.meterMode.load()+1)%3);};updateMeterSwitch();rebuild();startTimerHz(30);
  }
@@ -89,7 +89,7 @@ public:
  }
  int visibleInputs()const{int n=0;for(int i=0;i<engine.sourceCount;++i)if(engine.present[i])++n;return n;}
  int chainTop()const{return 60+juce::jmin(3,visibleInputs())*57+12;}
- void refreshOutputChoices(){auto selected=engine.preferredOutputDevice;outputDevice.clear(juce::dontSendNotification);outputDevice.addItem("Windows default",1);int selectedId=1,id=2;for(auto&name:engine.availableOutputDevices()){outputDevice.addItem(name,id);if(name==selected)selectedId=id;++id;}outputDevice.setSelectedId(selectedId,juce::dontSendNotification);}
+ void refreshOutputChoices(){auto selected=engine.preferredOutputDevice;outputDevice.clear(juce::dontSendNotification);outputDeviceNames.clear();outputDevice.addItem("Windows default",1);int selectedId=1,id=2;for(auto&name:engine.availableOutputDevices()){outputDeviceNames.add(name);auto label=name;if(name.containsIgnoreCase("Creative XF1"))label="Creative XF1";else if(name.containsIgnoreCase("Realtek Digital Output"))label="Realtek Digital Output";outputDevice.addItem(label,id);if(name==selected)selectedId=id;++id;}outputDevice.setSelectedId(selectedId,juce::dontSendNotification);}
  void applySource(int i,juce::String exe){auto apps=engine.appGroups[i];if(!apps.contains(juce::File(exe).getFileName(),true))apps.add(juce::File(exe).getFileName());applySources(i,apps);}
  void applySources(int i,const juce::StringArray&apps){if(!engine.selectSources(i,apps)){juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,"Input app",engine.error);return;}history.clear();for(int j=0;j<engine.sourceCount;++j)if(engine.present[j]){sourceNames[j].setText(engine.sourceNames[j],juce::dontSendNotification);chooseApp[j].setButtonText(engine.appGroups[j].size()>1?"Apps":"App");chooseApp[j].setTooltip(engine.appGroups[j].joinIntoString("\n")+"\nClick to choose applications");inputMeters[j].clear();}resized();}
  void browseSource(int i){
@@ -139,7 +139,7 @@ public:
   ComPtr<IShellItem> item;PWSTR path=nullptr;if(SUCCEEDED(dialog->GetResult(&item))&&SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH,&path))){juce::File file{juce::String(path)};CoTaskMemFree(path);addPluginFile(file);}
  }
  void paint(juce::Graphics&g)override{
-  g.fillAll(juce::Colour(0xff171d26));g.setColour(juce::Colour(0xff80d5c5));juce::Path icon;icon.addStar({46,25},4,4,9,0.4f);g.fillPath(icon);g.setColour(juce::Colours::white);g.setFont(23);g.drawText("aster",66,7,65,35,juce::Justification::centredLeft);g.setFont(14);g.setColour(juce::Colour(0xffadbcc8));g.drawText("0.3.18",130,11,70,31,juce::Justification::centredLeft);g.setColour(juce::Colours::white);g.setFont(14);g.drawText("SHARED EFFECT CHAIN",40,chainTop(),180,24,juce::Justification::centredLeft);g.drawText("Output level",40,getHeight()-79,140,24,juce::Justification::centredLeft);
+  g.fillAll(juce::Colour(0xff171d26));g.setColour(juce::Colour(0xff80d5c5));juce::Path icon;icon.addStar({46,25},4,4,9,0.4f);g.fillPath(icon);g.setColour(juce::Colours::white);g.setFont(23);g.drawText("aster",66,7,65,35,juce::Justification::centredLeft);g.setFont(14);g.setColour(juce::Colour(0xffadbcc8));g.drawText("0.3.20",130,11,70,31,juce::Justification::centredLeft);g.setColour(juce::Colours::white);g.setFont(14);g.drawText("SHARED EFFECT CHAIN",40,chainTop(),180,24,juce::Justification::centredLeft);g.drawText("Output level",40,getHeight()-79,140,24,juce::Justification::centredLeft);
  }
  void resized()override{
   int right=getWidth()-40,n=0;int inputHeight=juce::jmin(3,visibleInputs())*57;inputViewport.setBounds(38,58,getWidth()-76,inputHeight);int width=inputViewport.getWidth()-16;
@@ -160,7 +160,6 @@ private:
    double clock=juce::Time::getMillisecondCounterHiRes();chainDisplay.update(engine.chainHold.consume(),chainClock>0?float((clock-chainClock)/1000):1.0f/30);chainClock=clock;auto peak=juce::Decibels::decibelsToGain(chainDisplay.held,-60.0f);auto text="Before output trim: "+PeakMeter::heldText(peak,false);if(chainSummary.getText()!=text)chainSummary.setText(text,juce::dontSendNotification);
   }
   if(now-lastSync>=500&&engine.meterMode==1){lastSync=now;if(std::any_of(windows.begin(),windows.end(),[](const std::unique_ptr<PluginWindow>&w){return w->isVisible();}))engine.syncMeterCopies();}
-  if(now-lastLabels>=1000){lastLabels=now;engine.sampleCpu();start.setEnabled(!engine.running);stop.setEnabled(engine.running);outputMute.setToggleState(engine.outputMuted,juce::dontSendNotification);for(int i=0;i<engine.sourceCount;++i){if(!engine.present[i])continue;auto count=engine.captures[i]->instances.load();instances[i].setText(juce::String(count)+(count==1?" instance":" instances")+(count==0?(engine.appGroups[i].isEmpty()?" - no apps":" - waiting"):""),juce::dontSendNotification);}juce::String text=juce::String(int(engine.sampleRate/1000))+" kHz | "+juce::String(engine.blockSize)+" samples | Audio "+juce::String(int(std::round(engine.devices.getCpuUsage()*100)))+"% | App "+juce::String(engine.appCpuPct,1)+"% | ";text+=engine.running?(engine.outputMuted?"Running - muted":"Running"):"Stopped";if(engine.error.isNotEmpty())text+=" | "+engine.error;status.setTooltip(text);status.setText(text,juce::dontSendNotification);}
   if(now-lastWrite>=5000){lastWrite=now;home().getChildFile("status.json").replaceWithText(juce::JSON::toString(engine.snapshot()));}
  }
 };
