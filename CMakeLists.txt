@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(AsterHost VERSION 0.3.17 LANGUAGES C CXX)
+project(AsterHost VERSION 0.3.18 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 add_subdirectory("${JUCE_DIR}" JUCE)
 juce_add_gui_app(AsterHost PRODUCT_NAME "aster" COMPANY_NAME "Aster Audio" VERSION "${PROJECT_VERSION}" ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/assets/aster.png" ICON_SMALL "${CMAKE_CURRENT_SOURCE_DIR}/assets/aster.png")
